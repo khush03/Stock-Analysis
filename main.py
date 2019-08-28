@@ -1,17 +1,14 @@
+from datetime import datetime
 import csv
-from datetime import date, timedelta
-import re
 import math
+import difflib
 
-
-start_date = []
-end_date = []
+start_date = ""
+end_date = ""
+date_range = []
 final_stock_list = []
 current_stock = {}
-
-month_days = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26','27','28','29','30','31']
-month_names = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-date_coversion = {'jan': 1,'feb': 2,'mar': 3,'apr': 4,'may': 5,'jun': 6,'jul': 7,'aug': 8,'sep': 9,'oct': 10,'nov':11,'dec':12 }
+stock_name_list = []
 
 # ------------------------------------- [START] CSV METHODS -----------------------------
 def read_data():
@@ -20,70 +17,28 @@ def read_data():
         next(reader, None)
         for row in reader:
             update_stock_list(row)
+
 # ------------------------------------- [END] CSV METHODS -------------------------------
 
 # ------------------------------------- [START] DATE METHODS ----------------------------
+
 def get_dates():
     while True:
         global start_date
-        start_date_input = input("From which date you want to start? (eg. 20-jan-19):-")
-        if is_date_valid(start_date_input):
-            start_date = date_conversion_in_required_format(start_date_input)
+        start_date_input = input("From which date you want to start? (eg. 20-jan-2019):-")
+        try:
+            start_date = datetime.strptime(start_date_input, "%d-%b-%Y")
             break
-        else:
+        except:
             print("Invalid date format, please provide required date format & valid date.")
     while True:
         global end_date
-        end_date_input = input("Till which date you want to analyze? (eg. 20-jan-19):-")
-        if is_date_valid(end_date_input):
-            end_date = date_conversion_in_required_format(end_date_input)
+        end_date_input = input("Till which date you want to analyze? (eg. 20-jan-2019):-")
+        try:
+            end_date = datetime.strptime(end_date_input, "%d-%b-%Y")
             break
-        else:
+        except:
             print("Invalid date format, please provide required date format & valid date.")
-
-def is_date_valid(date):
-    if not date:
-        return False
-    else:
-        date_values = date.split("-")
-        if len(date_values) != 3:
-            return False
-        if not date_values[0] in month_days:
-            return False
-        if not date_values[1].lower() in month_names:
-            return False
-        return True
-
-def date_conversion_in_required_format(date_given):
-    month = re.findall('[a-zA-Z]+', date_given, re.IGNORECASE)
-    month_val = "".join(month).lower()
-    date_given = date_given.lower().replace(month_val, str(date_coversion[month_val]))
-    date_given = list(map(int, date_given.split("-")))
-    return date_given
-
-def is_date_in_range(date):
-    parsed_date = date_conversion_in_required_format(date)
-    parsed_date_timestamp = get_parsed_date_timestamp(parsed_date)
-    start_date_timestamp = get_parsed_date_timestamp(start_date)
-    end_date_timestamp = get_parsed_date_timestamp(end_date)
-    print('dates parsed ', parsed_date_timestamp, ' start ', start_date_timestamp, ' end ', end_date_timestamp)
-    if start_date_timestamp <= parsed_date_timestamp <= end_date_timestamp:
-        return True
-    return False
-
-def get_parsed_date_timestamp(date_list):
-    result = str(date_list[2])
-    if date_list[1] < 10:
-        result = result + '0' + str(date_list[1])
-    else:
-        result = result + str(date_list[1])
-    if date_list[0] < 10:
-        result = result + '0' + str(date_list[0])
-    else:
-        result = result + str(date_list[0])
-    return int(result)
-# ------------------------------------- [END] DATE METHODS ------------------------------
-
 # ------------------------------------- [START] STOCK METHODS ---------------------------
 def update_stock_list(stock_data):
     if len(final_stock_list) > 0:
@@ -108,6 +63,7 @@ def update_stock_list(stock_data):
             }
         ]
     }
+    stock_name_list.append(stock_data[0].lower())
     final_stock_list.append(new_stock)
 
 def is_stock_present(stock_name):
@@ -117,15 +73,18 @@ def is_stock_present(stock_name):
     return False
 
 def string_check(stock_name):
-    for stock in final_stock_list:
-        if (stock['stock_name'].lower().find(stock_name.lower()) != -1):
-            return stock
+    stock_matches = difflib.get_close_matches(stock_name, stock_name_list)
+    if stock_matches:
+        for stock in final_stock_list:
+            if stock['stock_name'].lower() == stock_matches[0].lower():
+                return stock
     return False
 
 def get_price_list_for_date_range():
     temp_list = []
     for stat in current_stock["stock_stats"]:
-        if is_date_in_range(stat['date']):
+        curr_date = datetime.strptime(stat['date'], "%d-%b-%Y")
+        if start_date <= curr_date <= end_date:
             temp_list.append(stat)
     return temp_list
 # ------------------------------------- [END] STOCK METHODS -----------------------------
@@ -133,6 +92,8 @@ def get_price_list_for_date_range():
 # ------------------------------------- [START] STATS CALCULATION -----------------------
 def mean_calculate(item_list):
     len_items = len(item_list)
+    if len_items==0:
+        return 0
     sum = 0
     for item in item_list:
         sum = sum + item['value']
@@ -140,6 +101,8 @@ def mean_calculate(item_list):
     return mean
 
 def standard_deviation_calculation(item_list):
+    if len(item_list)==0:
+        return 0
     sum_squares = 0
     squared_values_to_find_mean = []
     mean_val = mean_calculate(item_list)
@@ -154,18 +117,25 @@ def standard_deviation_calculation(item_list):
     return standard_deviation_val
 
 def get_stock_dates_with_profit():
-    profit = 0
-    buy_date = ''
-    sell_date = ''
+    final_min_index = final_max_index = min_price_index = max_price_index = 0
+    max_diff = 0
     price_obj_list = get_price_list_for_date_range()
-    list_len = len(price_obj_list)
-    for i in range(list_len):
-        for j in range(i, list_len):
-            if (price_obj_list[j]['value'] - price_obj_list[i]['value']) > profit:
-                buy_date = price_obj_list[i]['date']
-                sell_date = price_obj_list[j]['date']
-                profit = price_obj_list[j]['value'] - price_obj_list[i]['value']
-    return [buy_date if buy_date else None, sell_date if sell_date else None, profit if profit else 0]
+    len_arr = len(price_obj_list)
+    if not len_arr:
+        return [None, None, 0]
+    for index in range(1, len_arr):
+        if price_obj_list[index]['value'] < price_obj_list[min_price_index]['value']:
+            min_price_index = max_price_index = index
+        elif price_obj_list[index]['value'] > price_obj_list[max_price_index]['value']:
+            max_price_index = index
+        if (price_obj_list[max_price_index]['value'] - price_obj_list[min_price_index]['value']) > max_diff:
+            final_min_index = min_price_index
+            final_max_index = max_price_index
+            max_diff = price_obj_list[max_price_index]['value'] - price_obj_list[min_price_index]['value']
+    buy_date = price_obj_list[final_min_index]['date']
+    sell_date = price_obj_list[final_max_index]['date']
+    profit = max_diff * 100
+    return [buy_date, sell_date, profit]
 # ------------------------------------- [END] STATS CALCULATION -------------------------
 
 # ------------------------------------- [START] OTHER -----------------------------------
@@ -181,13 +151,21 @@ def get_input():
                     print("We couldnt find any stock with this name, please try again!!")
                 else:
                     current_stock = stock_info
-                    user_approval = input("Oops! Do you mean '" + stock_info['stock_name'] + "':? (Y/N)")
-                    if user_approval == 'Y' or user_approval == 'y':
-                        len_stock_stat = len(current_stock['stock_stats'])
-                        if len_stock_stat == 1 and current_stock['stock_stats'][0]['value'] == 0:
-                            print("Insufficient data for '" + current_stock['stock_name'] + "' ,stock value not provided!!")
+                    while True:
+                        user_approval = input("Oops! Do you mean '" + stock_info['stock_name'] + "':? (Y/N)")
+
+                        if user_approval.lower() not in ["y", "n"]:
+                            print("Inavlid input. Please enter Y/N")
+                        elif user_approval == 'Y' or user_approval == 'y':
+                            len_stock_stat = len(current_stock['stock_stats'])
+                            if len_stock_stat == 1 and current_stock['stock_stats'][0]['value'] == 0:
+                                print("Insufficient data for '" + current_stock['stock_name'] + "' ,stock value not provided!!")
+                                break
+                            else:
+                                proceed_for_stock()
+                                break
                         else:
-                            proceed_for_stock()
+                            break
             else:
                 current_stock = stock_info
                 len_stock_stat = len(current_stock['stock_stats'])
@@ -197,9 +175,17 @@ def get_input():
                     proceed_for_stock()
         except Exception as e:
             print("Something went wrong, please try again!!", str(e))
-
-        exit_input = input("Do you want to continue? (Y/N) :")
-        if exit_input != 'Y' and exit_input != 'y':
+        no_flag = False
+        while True:
+            exit_input = input("Do you want to continue? (Y/N) :")
+            if exit_input.lower() not in ['y','n']:
+                print("Invalid input. Please enter Y/N")
+            elif exit_input.lower()=="y":
+                break
+            else:
+                no_flag = True
+                break
+        if no_flag:
             break
 
 def proceed_for_stock():
